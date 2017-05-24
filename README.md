@@ -1,5 +1,5 @@
 # HMMs-for-occupancy-detection
-Repository hosting the files for "A methodology based on Hidden Markov Models for occupancy detection and a case study in a low energy residential building. Luis M Candanedo, Veronique Feldheim, Dominique Deramaix. 148 (2017) 327-341" 
+Repository hosting the files for "A methodology based on Hidden Markov Models for occupancy detection and a case study in a low energy residential building. Luis M Candanedo, Veronique Feldheim, Dominique Deramaix. Energy and Buildings. 148 (2017) 327-341" 
 
 All the files will be uploaded shortly! Thank you for your patience.
 
