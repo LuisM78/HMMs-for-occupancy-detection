@@ -1,0 +1,999 @@
+---
+title: "HMM_occupancy_estimation_time influence"
+author: "Luis Candanedo"
+output: html_document
+---
+FOR 5 MIN
+========
+
+```{r,out.width = '\\maxwidth'}
+
+setwd("D:/Dropbox/Occupancy_estimation/data_occupancy_detection")
+save.image(file="occupancy_HMM_script.RData")
+
+datatraining <- read.table("datatraining.txt",header=TRUE,sep=",")
+datatesting <- read.table("datatest.txt",header=TRUE,sep=",")
+datatesting2 <- read.table("datatest2.txt",header=TRUE,sep=",")
+
+datatraining$date <- as.POSIXct(datatraining$date,tz="UTC") 
+datatesting$date <- as.POSIXct(datatesting$date,tz="UTC") 
+datatesting2$date <- as.POSIXct(datatesting2$date,tz="UTC") 
+
+
+
+library(lubridate)
+library(openair)
+library(depmixS4)
+library(plyr)
+library(caret)
+
+str(datatraining)
+prop.table(table(datatesting$Occupancy))
+
+datatraining$date[1]
+
+
+Comp_time_mean_adjust_occup <- function(DTime,file_object) {
+ 
+  mresu <- timeAverage(file_object,avg.time=DTime,statistic="mean")
+  Rel_Occu <- function(x) {
+    
+    if (x > 0.5) {
+      val2 = 1
+    }
+    else {
+      val2= 0
+    }
+    return(val2)
+  }
+  
+  
+  mresu$Occupancy <- unlist(lapply(mresu$Occupancy,Rel_Occu))
+  return(mresu)
+}
+
+
+check_pred <- function(x,predictions_DF){
+  # x is  data frame with diff moisture
+  
+  if(mean(x[predictions_DF[,1]==1]) < mean(x[predictions_DF[,1]==2])
+     & max(x[predictions_DF[,1]==2]) > max(x[predictions_DF[,1]==1] ) )
+  {
+    print('perfect')
+    inverted <- predictions_DF[,1]
+  } else{
+    print('need to invert the prediction')
+    n <- length(predictions_DF[,1])
+    inverted <- vector()
+    for (i in 1:n) {
+      if (predictions_DF[,1][i] == 1) {
+        val2 = 2
+        inverted <- c(inverted,val2)
+      }
+      else {
+        val2= 1
+        inverted <- c(inverted,val2)
+      }
+      
+    }
+    
+  }
+  return(inverted)
+}
+
+
+
+
+
+
+
+
+Relevel_0_1 <- function(x) {
+  
+  if (x == 2) {
+    val2 = 1
+  }
+  else {
+    val2= 0
+  }
+  return(val2)
+}
+
+
+HMM_Performance <- function(mydata){
+  W3  <- c(mydata$HumidityRatio)
+  
+  W3s <- W3
+  dW3 <- diff(W3s)
+  
+  mod3 <- depmix(list(dW3 ~ 1),
+    data=data.frame(dW3),
+    family=list(gaussian()),
+    nstates=2)
+  f3 <- fit(mod3)
+  n <- length(dW3)+1
+  n
+  esttrans_1_day <- posterior(f3)
+  esttrans_1_day[,1] <- check_pred(dW3,esttrans_1_day)
+  
+  occup1 <- unlist(lapply(esttrans_1_day[,1],Relevel_0_1 ))
+  #occup1
+  
+  o <- par(no.readonly=T)
+  par(mfrow=c(2,1))
+  plot(mydata$date , c(dW3[1],dW3) , type='l', 
+       main='Humidity Ratio Difference',
+        xlab = "Time",ylab="Humidity Ratio Difference")
+   plot(mydata$date, c(occup1[1],occup1), type='l',
+        main='Real and Estimated state',
+        xlab = "Time",ylab="State",col='red',ylim=c(0,1.5), yaxt="n")
+  
+   lines(mydata$date,mydata$Occupancy, type='l', col='black')
+   legend("topright", inset=c(0,0),c("Real","Estimated"), lty=c(1,1), 
+         lwd=c(1,1),col=c("black","red"),
+         bg="transparent",cex=0.50,bty = "n")
+         axis(2, at=c(0,1),labels=c(0,1), col.axis="black", las=1)
+  
+  
+  
+  
+  reconfu <-confusionMatrix(mresu$Occupancy,c(occup1[1],occup1),positive = "0")
+  reconfu
+  return(reconfu)
+}
+  
+
+
+mresu <- Comp_time_mean_adjust_occup("10 min",datatraining)
+
+
+
+
+prop.table(table(mresu$Occupancy))
+
+table(mresu$Occupancy)
+
+
+
+#mresu$CO2
+
+
+
+## To Co2
+
+HMM_Performance_CO2 <- function(mydata){
+  W3  <- c(mydata$CO2)
+  W3s  <- W3
+  dW3 <- W3s 
+  dW3 <- diff(W3s)
+  
+  mod3 <- depmix(list(dW3 ~ 1),
+                 data=data.frame(dW3),
+                 family=list(gaussian()),
+                 nstates=2)
+  f3 <- fit(mod3)
+  n <- length(dW3)+1
+  n
+  esttrans_1_day <- posterior(f3)
+  esttrans_1_day[,1] <- check_pred(dW3,esttrans_1_day)
+  
+  occup1 <- unlist(lapply(esttrans_1_day[,1],Relevel_0_1 ))
+  #occup1
+  
+  o <- par(no.readonly=T)
+  par(mfrow=c(2,1))
+  plot(mydata$date , c(dW3[1],dW3) , type='l', main='CO2 Difference',
+       xlab = "Time",ylab="CO2 Difference")
+  plot(mydata$date, c(occup1[1],occup1), type='l', 
+       main='Real and Estimated state',
+       xlab = "Time",ylab="State",col='red',ylim=c(0,1.5), yaxt="n")
+  #plot(1:815, myresu$Occupancy, type='l', main='Real state')
+  lines(mydata$date,mydata$Occupancy, type='l', 
+        col='black')
+  legend("topright", inset=c(0,0),c("Real","Estimated"), lty=c(1,1), 
+         lwd=c(1,1),col=c("black","red"),
+         bg="transparent",cex=0.50,bty = "n")
+  axis(2, at=c(0,1),labels=c(0,1), col.axis="black", las=1)
+  
+  
+ 
+  reconfu <-confusionMatrix(mresu$Occupancy,c(occup1[1],occup1),positive = "0")
+  reconfu
+  return(reconfu)
+}
+
+# for Light
+
+
+HMM_Performance_Light <- function(mydata){
+  W3  <- c(mydata$Light)
+  
+   W3s <- W3 
+  dW3 <- diff(W3s)
+  #plot(dW3)
+  
+  mod3 <- depmix(list(dW3 ~ 1),
+                 data=data.frame(dW3),
+                 family=list(multinomial("identity")),
+                 nstates=2)
+  f3 <- fit(mod3)
+  n <- length(dW3)+1
+  n
+  esttrans_1_day <- posterior(f3)
+  esttrans_1_day[,1] <- check_pred(dW3,esttrans_1_day)
+  
+  occup1 <- unlist(lapply(esttrans_1_day[,1],Relevel_0_1 ))
+  #occup1
+  
+  
+  
+  o <- par(no.readonly=T)
+  par(mfrow=c(2,1))
+  plot(mydata$date , c(dW3[1],dW3) , type='l', main='Light Difference',
+       xlab = "Time",ylab="Light Difference")
+  plot(mydata$date, c(occup1[1],occup1), type='l',
+       main='Real and Estimated state',
+       xlab = "Time",ylab="State",col='red',ylim=c(0,1.5), yaxt="n")
+  #plot(1:815, myresu$Occupancy, type='l', main='Real state')
+  lines(mydata$date,mydata$Occupancy, type='l', col='black')
+  legend("topright", inset=c(0,0),c("Real","Estimated"), lty=c(1,1), 
+         lwd=c(1,1),col=c("black","red"),
+         bg="transparent",cex=0.50,bty = "n")
+         axis(2, at=c(0,1),labels=c(0,1), col.axis="black", las=1)
+  
+
+  reconfu <-confusionMatrix(mresu$Occupancy,c(occup1[1],occup1),positive = "0")
+  reconfu
+  return(reconfu)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+HMM_Performance_Tem <- function(mydata){
+  W3  <- c(mydata$Temperature)
+  
+  
+  W3s <- W3
+  
+  dW3 <- diff(W3s)
+  #plot(dW3)
+  
+  mod3 <- depmix(list(dW3 ~ 1),
+                 data=data.frame(dW3),
+                 family=list(gaussian()),
+                 nstates=2)
+  f3 <- fit(mod3)
+  n <- length(dW3)+1
+  n
+  esttrans_1_day <- posterior(f3)
+  esttrans_1_day[,1] <- check_pred(dW3,esttrans_1_day)
+    
+  occup1 <- unlist(lapply(esttrans_1_day[,1],Relevel_0_1 ))
+  #occup1
+  
+  
+  o <- par(no.readonly=T)
+  par(mfrow=c(2,1))
+  plot(mydata$date , c(dW3[1],dW3) , type='l', main='Temperature Difference',
+       xlab = "Time",ylab="Temperature Difference")
+  plot(mydata$date, c(occup1[1],occup1), type='l',
+       main='Real and Estimated state',
+       xlab = "Time",ylab="State",col='red',ylim=c(0,1.5), yaxt="n")
+  #plot(1:815, myresu$Occupancy, type='l', main='Real state')
+  lines(mydata$date,mydata$Occupancy, type='l',col='black')
+  legend("topright", inset=c(0,0),c("Real","Estimated"), lty=c(1,1), 
+         lwd=c(1,1),col=c("black","red"),
+         bg="transparent",cex=0.50,bty = "n")
+         axis(2, at=c(0,1),labels=c(0,1), col.axis="black", las=1)
+  
+  
+  
+  reconfu <-confusionMatrix(mresu$Occupancy,c(occup1[1],occup1),positive = "0")
+  reconfu
+  return(reconfu)
+}
+
+
+
+
+
+
+HMM_Performance_Hu <- function(mydata){
+  W3  <- c(mydata$Humidity)
+  
+  W3s <- W3
+  
+  dW3 <- diff(W3s)
+  #plot(dW3)
+  
+  mod3 <- depmix(list(dW3 ~ 1),
+                 data=data.frame(dW3),
+                 family=list(gaussian()),
+                 nstates=2)
+  f3 <- fit(mod3)
+  n <- length(dW3)+1
+  n
+  esttrans_1_day <- posterior(f3)
+  esttrans_1_day[,1] <- check_pred(dW3,esttrans_1_day)
+  occup1 <- unlist(lapply(esttrans_1_day[,1],Relevel_0_1 ))
+  occup1
+  
+  o <- par(no.readonly=T)
+  par(mfrow=c(2,1))
+  plot(mydata$date , c(dW3[1],dW3) , type='l', main='Humidity Difference',
+       xlab = "Time",ylab="Humidity Difference")
+  plot(mydata$date, c(occup1[1],occup1), type='l',
+       main='Real and Estimated state',
+       xlab = "Time",ylab="State",col='red',ylim=c(0,1.5), yaxt="n")
+  #plot(1:815, myresu$Occupancy, type='l', main='Real state')
+  lines(mydata$date,mydata$Occupancy, type='l',  col='black')
+  legend("topright", inset=c(0,0),c("Real","Estimated"), lty=c(1,1), 
+         lwd=c(1,1),col=c("black","red"),
+         bg="transparent",cex=0.50,bty = "n")
+         axis(2, at=c(0,1),labels=c(0,1), col.axis="black", las=1)
+   
+
+  reconfu <-confusionMatrix(mresu$Occupancy,c(occup1[1],occup1),positive = "0")
+  reconfu
+  return(reconfu)
+}
+
+
+
+
+
+
+
+HMM_Performance_Hu_CO2 <- function(mydata){
+
+  
+  mydata<-mydata[,c("date","Humidity","CO2")]
+  W3 <- mydata[,c("Humidity","CO2")]
+  dW3s <- data.frame(Humidity=diff(W3$Humidity),CO2=diff(W3$CO2))
+  
+
+  
+  mod3 <- depmix(list(Humidity ~ 1,CO2~ 1),
+                 data=data.frame(dW3s),
+                 family=list(gaussian(),gaussian()),
+                 nstates=2)
+  f3 <- fit(mod3)
+  print(length(dW3s))
+  print(dim(dW3s))
+
+  esttrans_1_day <- posterior(f3)
+  
+  esttrans_1_day[,1] <- check_pred(dW3s$CO2,esttrans_1_day)
+    occup1 <- unlist(lapply(esttrans_1_day[,1],Relevel_0_1 ))
+  #occup1
+  
+  
+  o <- par(no.readonly=T)
+  par(mfrow=c(3,1))
+  plot(mydata$date , c(dW3s$CO2[1],dW3s$CO2) , type='l', 
+       main='CO2 Difference',
+       xlab = "Time",ylab="CO2 Difference")
+  plot(mydata$date , c(dW3s$Humidity[1],dW3s$Humidity), 
+       type='l', main='Humidity Difference',
+       xlab = "Time",ylab="Humidity Difference")
+  plot(mydata$date,c(occup1[1],occup1), type='l',
+       main='Real and Estimated state',
+       xlab = "Time",ylab="State",
+       col='red',ylim=c(0,1.5), yaxt="n")
+     
+ 
+  lines(mresu$date,mresu$Occupancy, type='l', col='black')
+  legend("topright", inset=c(0,0),c("Real","Estimated"), lty=c(1,1), 
+         lwd=c(1,1),col=c("black","red"),
+         bg="transparent",cex=0.50,bty = "n")
+         axis(2, at=c(0,1),labels=c(0,1), col.axis="black", las=1)
+
+
+  
+  reconfu <-confusionMatrix(mresu$Occupancy,c(occup1[1],occup1),positive = "0")
+  reconfu
+  return(reconfu)
+}
+
+
+
+
+
+HMM_Performance_T_HURatio <- function(mydata){
+
+  
+  mydata<-mydata[,c("date","HumidityRatio","Temperature")]
+  W3 <- mydata[,c("HumidityRatio","Temperature")]
+  dW3s <- data.frame(HumidityRatio=diff(W3$HumidityRatio),Temperature=diff(W3$Temperature))
+  
+
+  
+  mod3 <- depmix(list(HumidityRatio ~ 1,Temperature~ 1),
+                 data=data.frame(dW3s),
+                 family=list(gaussian(),gaussian()),
+                 nstates=2)
+  f3 <- fit(mod3)
+  print(length(dW3s))
+  print(dim(dW3s))
+
+  esttrans_1_day <- posterior(f3)
+  
+  esttrans_1_day[,1] <- check_pred(dW3s$HumidityRatio,esttrans_1_day)
+  occup1 <- unlist(lapply(esttrans_1_day[,1],Relevel_0_1 ))
+  #occup1
+  o <- par(no.readonly=T)
+  par(mfrow=c(3,1))
+  plot(mydata$date , c(dW3s$HumidityRatio[1],dW3s$HumidityRatio) , type='l', main='Humidity Ratio Difference',
+       xlab = "Time",ylab="Humidity Ratio Difference")
+  plot(mydata$date , c(dW3s$Temperature[1],dW3s$Temperature), type='l', main='Temperature Difference',
+       xlab = "Time",ylab="Temperature Difference")
+  plot(mydata$date,  c(occup1[1],occup1), type='l',
+       main='Real and Estimated state',
+       xlab = "Time",ylab="State",col='red',ylim=c(0,1.5), yaxt="n")
+  #plot(1:815, myresu$Occupancy, type='l', main='Real state')
+  lines(mresu$date,mresu$Occupancy, type='l', col='black')
+  legend("topright", inset=c(0,0),c("Real","Estimated"), lty=c(1,1), 
+         lwd=c(1,1),col=c("black","red"),
+         bg="transparent",cex=0.50,bty = "n")
+  axis(2, at=c(0,1),labels=c(0,1), col.axis="black", las=1)
+        
+  
+  reconfu <-confusionMatrix(mresu$Occupancy,c(occup1[1],occup1),positive = "0")
+  reconfu
+  return(reconfu)
+}
+
+
+HMM_Performance_Light_HURatio <- function(mydata){
+
+  
+  mydata<-mydata[,c("date","HumidityRatio","Light")]
+  W3 <- mydata[,c("HumidityRatio","Light")]
+  dW3s <- data.frame(HumidityRatio=diff(W3$HumidityRatio),Light=diff(W3$Light))
+  
+
+  mod3 <- depmix(list(HumidityRatio ~ 1,Light~ 1),
+                 data=data.frame(dW3s),
+                 family=list(gaussian(),multinomial("identity")),
+                 
+                 nstates=2)
+  f3 <- fit(mod3)
+
+
+  esttrans_1_day <- posterior(f3)
+  
+  esttrans_1_day[,1] <- check_pred(dW3s$HumidityRatio,esttrans_1_day)
+  occup1 <- unlist(lapply(esttrans_1_day[,1],Relevel_0_1 ))
+  #occup1
+  
+  o <- par(no.readonly=T)
+  par(mfrow=c(3,1))
+  plot(mydata$date , c(dW3s$HumidityRatio[1],dW3s$HumidityRatio) , type='l', main='Humidity Ratio Difference',
+       xlab = "Time",ylab="Humidity Ratio Difference")
+  plot(mydata$date , c(dW3s$Light[1],dW3s$Light), type='l', main='Light Difference',
+       xlab = "Time",ylab="Light Difference")
+  plot(mydata$date, c(occup1[1],occup1), type='l',
+       main='Real and Estimated state',
+       xlab = "Time",ylab="State",col='red',ylim=c(0,1.5), yaxt="n")
+  #plot(1:815, myresu$Occupancy, type='l', main='Real state')
+  lines(mresu$date,mresu$Occupancy, type='l', col='black') 
+  legend("topright", inset=c(0,0),c("Real","Estimated"), lty=c(1,1), 
+         lwd=c(1,1),col=c("black","red"),
+         bg="transparent",cex=0.50,bty = "n")
+  axis(2, at=c(0,1),labels=c(0,1), col.axis="black", las=1)
+  
+
+  
+  reconfu <-confusionMatrix(mresu$Occupancy,c(occup1[1],occup1),positive = "0")
+  reconfu
+  return(reconfu)
+}
+
+
+
+
+
+
+# Training set ------------------------------------------------------------
+
+
+mresu <- Comp_time_mean_adjust_occup("5 min",datatraining)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+
+
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+# Testing set -----------------------------------------------------------
+
+
+mresu <- Comp_time_mean_adjust_occup("5 min",datatesting)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+                      
+
+
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+
+# Testing set 2----------------------------------------------------------
+
+mresu <- Comp_time_mean_adjust_occup("5 min",datatesting2)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+                  
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+```
+
+
+For 10 min
+==========
+
+```{r,out.width = '\\maxwidth'}
+
+
+# Training set ------------------------------------------------------------
+
+
+mresu <- Comp_time_mean_adjust_occup("10 min",datatraining)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+
+
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+# Testing set -----------------------------------------------------------
+
+
+mresu <- Comp_time_mean_adjust_occup("10 min",datatesting)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+                      
+
+
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+
+# Testing set 2----------------------------------------------------------
+
+mresu <- Comp_time_mean_adjust_occup("10 min",datatesting2)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+                  
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+```
+
+
+For 20 min
+==========
+
+```{r,out.width = '\\maxwidth'}
+
+
+# Training set ------------------------------------------------------------
+
+
+mresu <- Comp_time_mean_adjust_occup("20 min",datatraining)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+
+
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+# Testing set -----------------------------------------------------------
+
+
+mresu <- Comp_time_mean_adjust_occup("20 min",datatesting)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+                      
+
+
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+
+# Testing set 2----------------------------------------------------------
+
+mresu <- Comp_time_mean_adjust_occup("20 min",datatesting2)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+                  
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+```
+
+
+For 30 min
+==========
+
+```{r,out.width = '\\maxwidth'}
+
+
+# Training set ------------------------------------------------------------
+
+
+mresu <- Comp_time_mean_adjust_occup("30 min",datatraining)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+
+
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+# Testing set -----------------------------------------------------------
+
+
+mresu <- Comp_time_mean_adjust_occup("30 min",datatesting)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+                      
+
+
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+
+
+# Testing set 2----------------------------------------------------------
+
+mresu <- Comp_time_mean_adjust_occup("30 min",datatesting2)
+prop.table(table(mresu$Occupancy))
+table(mresu$Occupancy)
+
+set.seed(1)
+HMM_Performance(mresu)
+
+set.seed(1)
+HMM_Performance_CO2(mresu)
+                  
+set.seed(1)
+HMM_Performance_Hu(mresu)
+
+set.seed(1)
+HMM_Performance_Tem(mresu)
+
+set.seed(1)
+HMM_Performance_Hu_CO2(mresu)
+
+set.seed(1)
+HMM_Performance_T_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light_HURatio(mresu)
+
+
+set.seed(1)
+HMM_Performance_Light(mresu)
+
+```
+
+
+
